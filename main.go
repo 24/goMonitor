@@ -1,75 +1,71 @@
 package main
 
 import (
-	"net"
-	"log"
-	"bufio"
+	"net/http"
+	"io/ioutil"
 	"fmt"
+	"github.com/axgle/mahonia"
+	"regexp"
+	"strings"
+	"time"
 )
+
+const url = "https://www.zuanke8.com/zuixin.php"
+const delimiter  = "-------------分割线------------"
 
 func main() {
-	listener, err := net.Listen("tcp", "localhost:8000")
+	for {
+		data, statusCode := Get(url)
+		if statusCode != 200 {
+			fmt.Println(statusCode)
+		}
+		parseData(data)
+		println(delimiter)
+		time.Sleep(5*time.Second)
+	}
+}
+
+func Get(url string) (content string, statusCode int) {
+	response, err := http.Get(url)
 	if err != nil {
-		log.Fatal(err)
+		statusCode = -1
+		return
 	}
-	go broadcaster()
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Println(err)
-			continue
+	defer response.Body.Close()
+	data, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		statusCode = -2
+		return
+	}
+	statusCode = response.StatusCode
+	content = ConvertToString(string(data), "gbk", "utf-8")
+	return
+}
+
+func ConvertToString(src string, srcCode string, tagCode string) string {
+	srcCoder := mahonia.NewDecoder(srcCode)
+	srcResult := srcCoder.ConvertString(src)
+	tagCoder := mahonia.NewDecoder(tagCode)
+	_, cdata, _ := tagCoder.Translate([]byte(srcResult), true)
+	result := string(cdata)
+	return result
+}
+
+func parseData(data string) {
+	reg := regexp.MustCompile(`<a href="https://www.zuanke8.com/thread.*</a>`)
+	result := reg.FindAllStringSubmatch(data, 1000)
+	for _, item := range result {
+		titleReg := regexp.MustCompile(`title.*target`)
+		title := titleReg.FindString(item[0])
+		urlReg := regexp.MustCompile(`https://.*html`)
+		url := urlReg.FindString(item[0])
+		title = strings.TrimLeft(title, `title="`)
+		title = strings.TrimRight(title, `"  target`)
+		match, _ := regexp.MatchString("(速度|水|快|好价|还款)", title)
+		if match {
+			fmt.Println(title)
+			fmt.Println(url)
+			fmt.Println()
 		}
-		go handleConn(conn)
-	}
-}
-
-type client chan<- string
-
-var (
-	entering = make(chan client)
-	leaving  = make(chan client)
-	messages = make(chan string)
-)
-
-func broadcaster() {
-	clients := make(map[client]bool)
-	for {
-		select {
-		case msg := <-messages:
-			for cli := range clients {
-				cli <- msg
-			}
-		case cli := <-entering:
-			clients[cli] = true
-		case cli := <-leaving:
-			delete(clients, cli)
-			close(cli)
-		}
-	}
-}
-
-func handleConn(conn net.Conn) {
-	ch := make(chan string) // outgoing client messages
-	go clientWriter(conn, ch)
-
-	who := conn.RemoteAddr().String()
-	ch <- "You are " + who
-	messages <- who + " has arrived"
-	entering <- ch
-
-	input := bufio.NewScanner(conn)
-	for input.Scan() {
-		messages <- who + ": " + input.Text()
-	}
-	// NOTE: ignoring potential errors from input.Err()
-
-	leaving <- ch
-	messages <- who + " has left"
-	conn.Close()
-}
-
-func clientWriter(conn net.Conn, ch <-chan string) {
-	for msg := range ch {
-		fmt.Fprintln(conn, msg) // NOTE: ignoring network errors
 	}
 }
