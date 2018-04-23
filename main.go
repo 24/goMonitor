@@ -95,7 +95,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(statusCode)
 	}
 	retArr := parseData(data)
-	fmt.Fprintf(w, "%v", `<!DOCTYPE HTML><html> <meta http-equiv="refresh" content="1"><body>`)
+	fmt.Fprintf(w, "%v", `<!DOCTYPE HTML><html> <meta http-equiv="refresh" content="5"><body>`)
 	for _, item := range retArr {
 		fmt.Fprintf(w, `<a href="%s" target="_blank">%s</a><br> `, item["url"], item["title"])
 	}
