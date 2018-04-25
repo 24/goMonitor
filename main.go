@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"./src/userUtil"
+	"strconv"
 )
 
 func main() {
@@ -73,7 +74,8 @@ func parseZuanke8Data(data string) []map[string]string {
 	return retArr
 }
 
-func Get(url string) (content string, statusCode int) {
+func smzdmRawData() (content string, statusCode int) {
+	const url = "https://api.smzdm.com/v1/ranking_list/articles?category_ids=&f=iphone&mall_ids=&offset=0&order=12&slot=12&tab=1&tab_id=47&tag_ids=&v=8.2&weixin=1"
 	response, err := http.Get(url)
 	if err != nil {
 		statusCode = -1
@@ -90,8 +92,59 @@ func Get(url string) (content string, statusCode int) {
 	return
 }
 
+func parseZdmData(data string) []map[string]string {
+	type Rows []struct {
+		Article_title           string `json:"article_title"`
+		Article_price           string `json:"article_price"`
+		Article_worthy          string `json:"article_worthy"`
+		Article_unworthy        string `json:"article_unworthy"`
+		Article_worthy_per_cent string `json:"article_worthy_per_cent"`
+		Article_url             string `json:"article_url"`
+		Article_date            string `json:"article_date"`
+	}
+	type Data struct {
+		Rows Rows
+	}
+	type Result struct {
+		Data Data `json:"data"`
+	}
+	var result Result
+	if err := json.Unmarshal([]byte(data), &result); err != nil {
+		log.Fatal("json unmarsha1 failed", err)
+	}
+	retArr := make([]map[string]string, 0)
+	for _, item := range result.Data.Rows {
+		retItem := make(map[string]string)
+		retItem["title"] = item.Article_title
+		retItem["price"] = item.Article_price
+		retItem["worthy"] = item.Article_worthy
+		retItem["unworthy"] = item.Article_unworthy
+		retItem["percent"] = item.Article_worthy_per_cent
+		retItem["date"] = item.Article_date
+		retItem["url"] = item.Article_url
+		retArr = append(retArr, retItem)
+	}
+
+	return retArr
+}
+
 func cmd() {
 	for {
+		zdmData, zdmStatusCode := smzdmRawData()
+		if zdmStatusCode != 200 {
+			fmt.Println(zdmStatusCode)
+		}
+		zdmRetArr := parseZdmData(zdmData)
+		for _, Item := range zdmRetArr {
+			percent, _ := strconv.ParseFloat(Item["percent"], 64)
+			interval := time.Now().Unix() - userUtil.Datetime2timeStamp(Item["date"])
+			if percent > 0.70 && interval < 5*60*60 {
+				fmt.Printf("%s\n%s\n值%s--不值%s\n%.2f%%\n%s\n\n", Item["title"], Item["price"], Item["worthy"], Item["unworthy"], 100*percent, Item["url"])
+			}
+		}
+		println()
+		println()
+
 		data, statusCode := zuanke8RawData()
 		if statusCode != 200 {
 			fmt.Println(statusCode)
@@ -107,12 +160,31 @@ func cmd() {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "%v", `<!DOCTYPE HTML><html> <meta http-equiv="refresh" content="5"><body>`)
+
+	zdmData, zdmStatusCode := smzdmRawData()
+	if zdmStatusCode != 200 {
+		fmt.Println(zdmStatusCode)
+	}
+	zdmRetArr := parseZdmData(zdmData)
+	for _, zdmItem := range zdmRetArr {
+		percent, _ := strconv.ParseFloat(zdmItem["percent"], 64)
+		interval := time.Now().Unix() - userUtil.Datetime2timeStamp(zdmItem["date"])
+		if percent > 0.70 && interval < 5*60*60 {
+			fmt.Fprintf(w, `%s<br>`, zdmItem["title"])
+			fmt.Fprintf(w, `%s<br>`, zdmItem["price"])
+			fmt.Fprintf(w, `值%s---不值%s<br>`, zdmItem["worthy"], zdmItem["unworthy"])
+			fmt.Fprintf(w, `%.2f%%<br>`, 100*percent)
+			fmt.Fprintf(w, `<a href="%s" target="_blank">%s</a><br><br>`, zdmItem["url"], zdmItem["url"])
+			println()
+		}
+	}
+
 	data, statusCode := zuanke8RawData()
 	if statusCode != 200 {
 		fmt.Println(statusCode)
 	}
 	retArr := parseZuanke8Data(data)
-	fmt.Fprintf(w, "%v", `<!DOCTYPE HTML><html> <meta http-equiv="refresh" content="5"><body>`)
 	for _, item := range retArr {
 		fmt.Fprintf(w, `<a href="%s" target="_blank">%s</a><br> `, item["zuanke8url"], item["title"])
 	}
