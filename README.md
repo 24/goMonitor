@@ -1,2 +1,1 @@
-# GO Practice
-hi
+# a monitor for zuanke8 & smzdm
