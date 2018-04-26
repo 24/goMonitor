@@ -20,7 +20,7 @@ func main() {
 		cmd()
 	} else {
 		http.HandleFunc("/", handler)
-		log.Fatal(http.ListenAndServe("localhost:8000", nil))
+		log.Fatal(http.ListenAndServe(":8000", nil))
 	}
 }
 
@@ -72,6 +72,20 @@ func parseZuanke8Data(data string) []map[string]string {
 	}
 
 	return retArr
+}
+
+func outZzuanke8(zk8ch chan<- string) {
+	data, statusCode := zuanke8RawData()
+	if statusCode != 200 {
+		fmt.Println(statusCode)
+	}
+	retArr := parseZuanke8Data(data)
+	zk8str := ""
+	for _, Item := range retArr {
+		zk8str += fmt.Sprintf("%s\n%s\n\n", Item["title"], Item["zuanke8url"])
+	}
+	zk8ch <- zk8str
+	close(zk8ch)
 }
 
 func smzdmRawData() (content string, statusCode int) {
@@ -128,65 +142,80 @@ func parseZdmData(data string) []map[string]string {
 	return retArr
 }
 
+func outZdm(zdmch chan<- string) {
+	zdmData, zdmStatusCode := smzdmRawData()
+	if zdmStatusCode != 200 {
+		fmt.Println(zdmStatusCode)
+	}
+	zdmRetArr := parseZdmData(zdmData)
+	zdmstr := ""
+	for _, Item := range zdmRetArr {
+		percent, _ := strconv.ParseFloat(Item["percent"], 64)
+		interval := time.Now().Unix() - userUtil.Datetime2timeStamp(Item["date"])
+		if percent > 0.70 && interval < 5*60*60 {
+			zdmstr += fmt.Sprintf("%s\n%s\n值%s--不值%s\n%.2f%%\n%s\n\n", Item["title"], Item["price"], Item["worthy"], Item["unworthy"], 100*percent, Item["url"])
+		}
+	}
+	zdmch <- zdmstr
+	close(zdmch)
+}
+
 func cmd() {
 	for {
-		zdmData, zdmStatusCode := smzdmRawData()
-		if zdmStatusCode != 200 {
-			fmt.Println(zdmStatusCode)
-		}
-		zdmRetArr := parseZdmData(zdmData)
-		for _, Item := range zdmRetArr {
-			percent, _ := strconv.ParseFloat(Item["percent"], 64)
-			interval := time.Now().Unix() - userUtil.Datetime2timeStamp(Item["date"])
-			if percent > 0.70 && interval < 5*60*60 {
-				fmt.Printf("%s\n%s\n值%s--不值%s\n%.2f%%\n%s\n\n", Item["title"], Item["price"], Item["worthy"], Item["unworthy"], 100*percent, Item["url"])
-			}
-		}
-		println()
-		println()
-
-		data, statusCode := zuanke8RawData()
-		if statusCode != 200 {
-			fmt.Println(statusCode)
-		}
-		retArr := parseZuanke8Data(data)
-		for _, Item := range retArr {
-			fmt.Printf("%s\n%s\n\n", Item["title"], Item["zuanke8url"])
-		}
-		println()
-		println()
+		zk8ch := make(chan string,1)
+		zdmch := make(chan string,1)
+		go outZdm(zdmch)
+		go outZzuanke8(zk8ch)
+		println(<- zdmch)
+		println(<- zk8ch)
 		time.Sleep(5 * time.Second)
 	}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%v", `<!DOCTYPE HTML><html> <meta http-equiv="refresh" content="5"><body>`)
+	zuanke8ch := make(chan string)
+	smzdmch := make(chan string)
+	go htmlZuanke8(zuanke8ch)
+	go htmlZdm(smzdmch)
+	fmt.Fprintf(w, "%v", `</body></html>`)
+	fmt.Fprintf(w, <-smzdmch)
+	fmt.Fprintf(w, <-zuanke8ch)
+}
 
-	zdmData, zdmStatusCode := smzdmRawData()
-	if zdmStatusCode != 200 {
-		fmt.Println(zdmStatusCode)
-	}
-	zdmRetArr := parseZdmData(zdmData)
-	for _, zdmItem := range zdmRetArr {
-		percent, _ := strconv.ParseFloat(zdmItem["percent"], 64)
-		interval := time.Now().Unix() - userUtil.Datetime2timeStamp(zdmItem["date"])
-		if percent > 0.70 && interval < 5*60*60 {
-			fmt.Fprintf(w, `%s<br>`, zdmItem["title"])
-			fmt.Fprintf(w, `%s<br>`, zdmItem["price"])
-			fmt.Fprintf(w, `值%s---不值%s<br>`, zdmItem["worthy"], zdmItem["unworthy"])
-			fmt.Fprintf(w, `%.2f%%<br>`, 100*percent)
-			fmt.Fprintf(w, `<a href="%s" target="_blank">%s</a><br><br>`, zdmItem["url"], zdmItem["url"])
-			println()
-		}
-	}
-
+func htmlZuanke8(zuanke8ch chan<- string) {
 	data, statusCode := zuanke8RawData()
 	if statusCode != 200 {
 		fmt.Println(statusCode)
 	}
 	retArr := parseZuanke8Data(data)
+	zuanke8str := ""
 	for _, item := range retArr {
-		fmt.Fprintf(w, `<a href="%s" target="_blank">%s</a><br> `, item["zuanke8url"], item["title"])
+		zuanke8str += fmt.Sprintf(`<a href="%s" target="_blank">%s</a><br> `, item["zuanke8url"], item["title"])
 	}
-	fmt.Fprintf(w, "%v", `</body></html>`)
+	zuanke8ch <- zuanke8str
+	close(zuanke8ch)
+}
+
+func htmlZdm(smzdmch chan<- string) {
+	zdmData, zdmStatusCode := smzdmRawData()
+	if zdmStatusCode != 200 {
+		fmt.Println(zdmStatusCode)
+	}
+	zdmRetArr := parseZdmData(zdmData)
+	smzdmstr := ""
+	for _, zdmItem := range zdmRetArr {
+		percent, _ := strconv.ParseFloat(zdmItem["percent"], 64)
+		interval := time.Now().Unix() - userUtil.Datetime2timeStamp(zdmItem["date"])
+		if percent > 0.70 && interval < 5*60*60 {
+			smzdmstr += fmt.Sprintf(`%s<br>`, zdmItem["title"])
+			smzdmstr += fmt.Sprintf(`%s<br>`, zdmItem["price"])
+			smzdmstr += fmt.Sprintf(`值%s---不值%s<br>`, zdmItem["worthy"], zdmItem["unworthy"])
+			smzdmstr += fmt.Sprintf(`%.2f%%<br>`, 100*percent)
+			smzdmstr += fmt.Sprintf(`<a href="%s" target="_blank">%s</a><br><br>`, zdmItem["url"], zdmItem["url"])
+			println()
+		}
+	}
+	smzdmch <- smzdmstr
+	close(smzdmch)
 }
