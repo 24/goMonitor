@@ -207,7 +207,7 @@ func htmlZdm(smzdmch chan<- string) {
 	for _, zdmItem := range zdmRetArr {
 		percent, _ := strconv.ParseFloat(zdmItem["percent"], 64)
 		interval := time.Now().Unix() - userUtil.Datetime2timeStamp(zdmItem["date"])
-		if percent > 0.70 && interval < 5*60*60 {
+		if percent > 0.70 && interval < 1*60*60 {
 			smzdmstr += fmt.Sprintf(`%s<br>`, zdmItem["title"])
 			smzdmstr += fmt.Sprintf(`%s<br>`, zdmItem["price"])
 			smzdmstr += fmt.Sprintf(`值%s---不值%s<br>`, zdmItem["worthy"], zdmItem["unworthy"])
