@@ -1,17 +1,17 @@
 package main
 
 import (
-	"net/http"
-	"io/ioutil"
+	"./src/userUtil"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
-	"log"
-	"os"
-	"encoding/json"
-	"regexp"
-	"./src/userUtil"
-	"strconv"
 )
 
 func main() {
@@ -62,7 +62,7 @@ func parseZuanke8Data(data string) []map[string]string {
 	}
 	retArr := make([]map[string]string, 0)
 	for _, item := range result.Data.Relist {
-		match, _ := regexp.MatchString("(速度|水|快|好价|还款)", item.Subject)
+		match, _ := regexp.MatchString("(速度|水|快|好价|还款|话费)", item.Subject)
 		if match {
 			retItem := make(map[string]string)
 			retItem["title"] = item.Subject
@@ -162,12 +162,12 @@ func outZdm(zdmch chan<- string) {
 
 func cmd() {
 	for {
-		zk8ch := make(chan string,1)
-		zdmch := make(chan string,1)
+		zk8ch := make(chan string, 1)
+		zdmch := make(chan string, 1)
 		go outZdm(zdmch)
 		go outZzuanke8(zk8ch)
-		println(<- zdmch)
-		println(<- zk8ch)
+		println(<-zdmch)
+		println(<-zk8ch)
 		time.Sleep(5 * time.Second)
 	}
 }
